@@ -1,108 +1,245 @@
 namespace netcdf {
 
-class dimension {
-private:
-    bool initialized;
-    int id;
-    int parent_id;
+
+typedef std::function<void(
+    std::string const &method, std::string const &lookup,
+    int groupid, int varid, int dimid, int attrid) ErrorHandler;
+
+void default_error_handler(...) {}
+
+public ErrorHandler error_handler = &default_error_handler;
+
+// -----------------------------------------------------------------
+
+class Dimension {
 public:
-    bool exist() { retun initialized; }
+    // Fundamental
+    int const id;
+    int const parent_id;
 
-    std::string name();
+    // Derived
+    bool const is_unlimited;
+    std::string const name;
+    size_t size();    // Current length of dimension
+    Group * const group;    // Group to which this dimension belongs
 
-    bool is_fixed();
+    // Test if this points to a valid dimension
+    bool is_null() const
+        { return (id < 0) }
 
-    size_t size();
+    // In the C interface, dimension IDs are 0, 1, 2, ..., in the order
+    // in which the dimensions were defined.
+    Dimension() : id(-1), parent_id(-1), is_unlimited(false) {}
+
+    operator=(Dimension const &other) {}
+    operator==(Dimension const &other) const {}
+protected:
+    Dimension(int parent_id, int id);
 };
 
-class attribute {
-private:
-    bool initialized;
-    int id;
-    int parent_id;
-public:
-    bool exist() {retun initialized;}
 
-    template<typename P,typename T>
-    attribute(P &parent,
-              const std::string &name,
-              const T &value);
 
-    template <typename T> operator T() const;
+// #define NC_NAT          0       
+//  #define NC_BYTE         1       
+//  #define NC_CHAR         2       
+//  #define NC_SHORT        3       
+//  #define NC_INT          4       
+//  #define NC_LONG         NC_INT  
+//  #define NC_FLOAT        5       
+//  #define NC_DOUBLE       6       
+//  #define NC_UBYTE        7       
+//  #define NC_USHORT       8       
+//  #define NC_UINT         9       
+//  #define NC_INT64        10      
+//  #define NC_UINT64       11      
+//  #define NC_STRING       12      
+//  #define NC_MAX_ATOMIC_TYPE NC_STRING 
+//  /* The following are use internally in support of user-defines
+//   * types. They are also the class returned by nc_inq_user_type. */
+//  #define NC_VLEN         13      
+//  #define NC_OPAQUE       14      
+//  #define NC_ENUM         15      
+//  #define NC_COMPOUND     16      
+//  #define NC_FIRSTUSERTYPEID 32
+
+enum class NcType {
+NC_NAT
+NC_BYTE
+NC_CHAR
+NC_SHORT
+NC_INT
+NC_LONG = NC_INT
+NC_FLOAT
+NC_DOUBLE
+NC_UBYTE
+NC_USHORT
+NC_UINT
+NC_INT64
+NC_UINT64
+NC_STRING
 };
 
-class variable {
-private:
-    bool initialized;
-    int id;
-    int parent_id;
+
+// =========== Convert C++ type to NetCDF type
+template<Type T>
+nc_type()
+{
+    error_handler("Illegal type");
+}
+template<int> nc_type() { return NC_INT; }
+...
+
+
+
+class Variable {
 public:
-    bool exist() {retun initialized;}
+    // Fundamental
+    int const id;
+    Group * const parent;
 
-    template<typename T>
-    variable (group &parent,
-              const std::string &name,
-              std::list<dimension> dimensions);
+    // Derived; obtained on construction from NC_inq_var_all()
+    // This is the only NetCDF inquiry function to be run upon Variable construction.
+    // All others should be run lazily.
+    std::string name	// name of the variable.
+    NcType xtype	// type of the variable.
+    int ndims	// number of associated dimensions for the variable.
+    std::vector<Dimension const *> const dimensions;
+    natts	// number of attributes associated with the variable.
+    shuffle	// shuffle information associated with the variable.
+    deflate	// compression type associated with the variable.
+    deflate_level	// compression level associated with the variable.
+    fletcher32	// compression information associated with the variable.
+    contiguous	// contiguous-data information associated with the variable.
+    chunksizes	// chunksize information associated with the variable.
+    no_fill	// whether or not there is a fill value associated with the variable. (NC_FILL or NC_NOFILL)
+    fill_value	// the fill value (if one exists) for the variable.
+    endianness	// endianness value. One of NC_ENDIAN_BIG NC_ENDIAN_LITTLE NC_ENDIAN_NATIVE
 
-    template<typename T>
-    variable (group &parent,
-              const std::string &name,
-              std::list<dimension> dimensions,
-              const T &value);
+    // Don't support HDF5 filters for now...
+    // idp	// filter id.
+    // nparamsp	// filter parameter count.
+    // params	Pointer to vector of unsigned integers into which to store filter parameters.
 
-    template<typename T> void set(const T &value);
+private:
+    // All these are lazily initialized
+    bool is_init_dims;    // True if derived fields have been read
+    void init_dims() const
+    { ...read all lazy fields; do some const hacking in here... }
 
-    template <typename T> operator T() const;
+    NcType _nc_type;
+
+public:
+    std::vector<Dimension const *> const dimensions() const
+    { if (!is_init_dims) init_dims(); return _dimensions; }
+
+    std::map<std::string const &, Attribute> const attributes() const
+    { if (!is_init_attributes) init_attributes(); return _attributes; }
+
+
+    template<class T, int ndim>
+    void get(
+        std::tuple<size_t,ndim> const &start,
+        std::tuple<size_t,ndim> const &count,
+        T *ip)
+    { ...call through to nc_get_var_xxx()... }
+
+    template<class T, int ndim>
+    void put(
+        std::tuple<size_t,ndim> const &start,
+        std::tuple<size_t,ndim> const &count,
+        T *op)
+
+    void get_att(...) {}
+
+    void put_att(...) {}
+
+};
+// ---------------------------------------------------
+class Attribute {
+    int const ncid;
+    int const varid;
+    std::string const name;
+
+    NcType type()
+        { nc_inq_atttype(...); }
+
+    // Gets an attribute of length 1 (common case)
+    template<type T> T get();
+
+    // Gets a multi-valued attribute
+    template<type T> std::vector<T> get_multi();
+
+
+    // Puts an attribute of length 1 (common case)
+    template<type T> T put();
+
+    // Puts a multi-valued attribute
+    template<type T> std::vector<T> put_multi();
+
+};
+// ---------------------------------------------------
+std::vector<std::string &> names(std::vector<Dimension const *> const &dims)
+{
+    std::vector<std::string &> ret(dims.size());
+    for (auto ii : dims) ret.push_back(ii->name);
+}
+
+std::vector<size_t> shape(std::vector<Dimension const *> const &dims)
+{
+    std::vector<std::string &> ret(dims.size());
+    for (auto ii : dims) ret.push_back(ii->size());
+}
+// ---------------------------------------------------
+template<class T>
+class ElementSet : public std::map<std::string, Dimension const>
+{
+    T const *operator[](std::string const &name) {
+        auto ii(dimensions().find(name));
+        if (ii == dimensions().end()) return nilptr;
+        return &*ii;
+    }
 };
 
-class group {
+enum class DataModel { NETCDF3_CLASSIC, NETCDF4, NETCDF4_CLASSIC, NETCDF3_64BIT_OFFSET or NETCDF3_64BIT_DATA };
+
+
+
+class Group {
+public:
+    // Fundamental
+    int const id;
+
+    // Derived
+    std::string const name;
+    DataModel data_model;
+
 private:
-    group(void);
+    ElementSet<CompoundType> _cmptypes;
+    ElementSet<Dimension> _dimensions;
+    ElementSet<LazyVariable> _variables;
 
 public:
-    group(group &parent, std::string &name);
+    ElementSet<Dimension> const &dimensions()
+        { return _dimensions; }
+    Dimension const *dimension(std::string const &name)
+        { return dimensions()[name]; }
 
-    /// Get this group name
-    std::string name();
+    ElementSet<Variable> const &dimensions()
+        { return _dimensions; }
+    Variable const *dimension(std::string const &name)
+        { return dimensions()[name]; }
 
-    /// Get this group set of dimensions
-    std::map <dimension, std::string> dimentions();
+    Variable const *def_var(std::string const &name, NcType type, std::vector<std::string> const &dims)
+    {
+        ... NetCDF calls ...
+        _variables.insert(...);
+    }
+    void add_dimension(...);
 
-    /// Get this group dimension by name
-    dimention dimension(const std::string &name);
+}
 
-    /// Get this group set of attributes
-    std::map <attribute, std::string> attributes();
 
-    /// Get this group attribute by name
-    attribute attribute(const std::string &name);
-
-    /// Get this group set of variables
-    std::map <variable, std::string> variables();
-
-    /// Get this group variable by name
-    variable variable(const std::string &name);
-
-    /// Get this group set of subgroups
-    std::map <group, std::string> groups();
-
-    /// Get this group subgroup by name
-    group group(const std::string &name);
-
-    /// Add dimension
-    void add(dimention &dim);
-
-    /// Add attribute
-    void add(attribute &att);
-
-    /// Add variable
-    void add(variable &var);
-
-    ///
-    ~group();
-};
-
-class file : public group {
+class File : public Group {
 public:
     enume mode {
           read,      ///< open read-only.
