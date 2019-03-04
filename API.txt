@@ -1,0 +1,128 @@
+namespace netcdf {
+
+class dimension {
+private:
+    bool initialized;
+    int id;
+    int parent_id;
+public:
+    bool exist() { retun initialized; }
+
+    std::string name();
+
+    bool is_fixed();
+
+    size_t size();
+};
+
+class attribute {
+private:
+    bool initialized;
+    int id;
+    int parent_id;
+public:
+    bool exist() {retun initialized;}
+
+    template<typename P,typename T>
+    attribute(P &parent,
+              const std::string &name,
+              const T &value);
+
+    template <typename T> operator T() const;
+};
+
+class variable {
+private:
+    bool initialized;
+    int id;
+    int parent_id;
+public:
+    bool exist() {retun initialized;}
+
+    template<typename T>
+    variable (group &parent,
+              const std::string &name,
+              std::list<dimension> dimensions);
+
+    template<typename T>
+    variable (group &parent,
+              const std::string &name,
+              std::list<dimension> dimensions,
+              const T &value);
+
+    template<typename T> void set(const T &value);
+
+    template <typename T> operator T() const;
+};
+
+class group {
+private:
+    group(void);
+
+public:
+    group(group &parent, std::string &name);
+
+    /// Get this group name
+    std::string name();
+
+    /// Get this group set of dimensions
+    std::map <dimension, std::string> dimentions();
+
+    /// Get this group dimension by name
+    dimention dimension(const std::string &name);
+
+    /// Get this group set of attributes
+    std::map <attribute, std::string> attributes();
+
+    /// Get this group attribute by name
+    attribute attribute(const std::string &name);
+
+    /// Get this group set of variables
+    std::map <variable, std::string> variables();
+
+    /// Get this group variable by name
+    variable variable(const std::string &name);
+
+    /// Get this group set of subgroups
+    std::map <group, std::string> groups();
+
+    /// Get this group subgroup by name
+    group group(const std::string &name);
+
+    /// Add dimension
+    void add(dimention &dim);
+
+    /// Add attribute
+    void add(attribute &att);
+
+    /// Add variable
+    void add(variable &var);
+
+    ///
+    ~group();
+};
+
+class file : public group {
+public:
+    enume mode {
+          read,      ///< open read-only.
+          write,     ///< exists, open for writing. (aka append).
+          replace,   ///< new file, even if it exists. (aka truncate)
+          newfile    ///< new file, fail if it exists.
+    };
+
+private:
+    file(void);
+
+    open(const std::string &name, mode m));
+
+    close();
+
+public:
+
+    file(const std::string &name, mode m);
+
+    ~file();
+};
+
+}// end of namespace netcdf
